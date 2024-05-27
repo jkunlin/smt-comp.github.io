@@ -1,7 +1,9 @@
-name: Main
+name: TestSolver
 
 on:
   pull_request:
+    paths:
+      - submissions/*.json
 
 jobs:
   generate-test-script:
