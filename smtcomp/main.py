@@ -142,21 +142,29 @@ def generate_benchexec(
     )
 
 
+# Should be moved somewhere else
+def download_archive_aux(s: defs.Submission, dst: Path) -> None:
+    """
+    Download and unpack
+    """
+    dst.mkdir(parents=True, exist_ok=True)
+    if s.archive:
+        archive.download(s.archive, dst)
+        archive.unpack(s.archive, dst)
+    for p in s.participations.root:
+        if p.archive:
+            archive.download(p.archive, dst)
+            archive.unpack(p.archive, dst)
+
+
 @app.command(rich_help_panel=benchexec_panel)
 def download_archive(files: List[Path], dst: Path) -> None:
     """
     Download and unpack
     """
     for file in track(files):
-        dst.mkdir(parents=True, exist_ok=True)
         s = submission.read(str(file))
-        if s.archive:
-            archive.download(s.archive, dst)
-            archive.unpack(s.archive, dst)
-        for p in s.participations.root:
-            if p.archive:
-                archive.download(p.archive, dst)
-                archive.unpack(p.archive, dst)
+        download_archive_aux(s, dst)
 
 
 @app.command()
@@ -497,3 +505,24 @@ def scramble_benchmarks(
     """
 
     smtcomp.scramble_benchmarks.scramble(competition_track, src, dstdir, scrambler, seed, max_workers)
+
+
+@app.command()
+def generate_test_script(output: Path, submissions: list[Path] = typer.Argument(None)) -> None:
+    def read_submission(file: Path) -> defs.Submission:
+        try:
+            return submission.read(str(file))
+        except Exception as e:
+            rich.print(f"[red]Error during file parsing of {file}[/red]")
+            print(e)
+            exit(1)
+
+    output.mkdir(parents=True, exist_ok=True)
+
+    l = list(map(read_submission, submissions))
+    script_output = output.joinpath("test_script.py")
+    with script_output.open("w") as out:
+        out.writelines("""print("Testing provers")\n""")
+        for sub in l:
+            out.writelines(f"print({sub.name!r})\n")
+            download_archive_aux(sub, output)

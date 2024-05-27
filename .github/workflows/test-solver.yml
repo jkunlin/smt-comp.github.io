@@ -1,0 +1,43 @@
+name: Main
+
+on:
+  pull_request:
+
+jobs:
+  generate-test-script:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out
+        uses: actions/checkout@v3
+
+      - uses: actions/cache@v3
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+
+      - name: Set up the environment
+        uses: ./.github/actions/setup-poetry-env
+
+      - name: Show changed files
+        run: |
+          poetry run smtcomp generate-test-script test_data/ ${{ steps.changed-files.outputs.all_changed_files }}
+
+      - name: Upload generated test script
+        uses: actions/upload-artifact@v4
+        with:
+          name: generated_script
+          path: test_data/
+
+  run-test-script:
+    needs: generate-test-script
+    runs-on: ubuntu-latest
+    container: registry.gitlab.com/sosy-lab/benchmarking/competition-scripts/user:latest
+    steps:
+      - name: Download generated test script
+        uses: actions/download-artifact@v4
+        with:
+          name: generated_script
+          path: test_data/
+
+      - name: Run test script
+        run: python3 test_data/test_script.py
