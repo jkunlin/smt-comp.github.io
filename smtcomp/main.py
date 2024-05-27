@@ -1,7 +1,7 @@
 import json
 import itertools
 from pathlib import Path
-from typing import List, Optional, cast, Dict, Any, Annotated
+from typing import List, Optional, cast, Dict, Any, Annotated, TextIO
 import rich
 from rich.progress import track
 import rich.style
@@ -507,6 +507,21 @@ def scramble_benchmarks(
     smtcomp.scramble_benchmarks.scramble(competition_track, src, dstdir, scrambler, seed, max_workers)
 
 
+def write_test(
+    out: TextIO,
+    track: defs.Track,
+    logic: defs.Logic,
+    part: defs.ParticipationCompleted,
+    status: defs.Status,
+    trivial_bench: Path,
+    outdir: Path,
+) -> None:
+    file_sat = smtcomp.generate_benchmarks.path_trivial_benchmark(trivial_bench, track, logic, status)
+    cmd = [str(archive.archive_unpack_dir(part.archive, outdir).joinpath(part.command.binary))] + part.command.arguments
+    out.write(f"print({cmd + [str(file_sat)]!r})\n")
+    out.write(f"subprocess.run({cmd + [str(file_sat)]!r})\n")
+
+
 @app.command()
 def generate_test_script(outdir: Path, submissions: list[Path] = typer.Argument(None)) -> None:
     def read_submission(file: Path) -> defs.Submission:
@@ -519,15 +534,17 @@ def generate_test_script(outdir: Path, submissions: list[Path] = typer.Argument(
 
     outdir.mkdir(parents=True, exist_ok=True)
 
-    smtcomp.generate_benchmarks.generate_trivial_benchmarks(outdir.joinpath("trivial_bench"))
+    trivial_bench = outdir.joinpath("trivial_bench")
+    smtcomp.generate_benchmarks.generate_trivial_benchmarks(trivial_bench)
 
     l = list(map(read_submission, submissions))
     script_output = outdir.joinpath("test_script.py")
     with script_output.open("w") as out:
-        out.writelines(["import subprocess\n",
-                        """print("Testing provers")\n"""])
+        out.write("import subprocess,os\n")
+        out.write("os.chdir(os.path.dirname(__file__))\n")
+        out.write("""print("Testing provers")\n""")
         for sub in l:
-            out.writelines([f"print({sub.name!r})"])
+            out.write(f"print({sub.name!r})\n")
             download_archive_aux(sub, outdir)
             for part in sub.complete_participations():
                 for track, divisions in part.tracks.items():
@@ -540,11 +557,16 @@ def generate_test_script(outdir: Path, submissions: list[Path] = typer.Argument(
                             pass
                         case defs.Track.UnsatCore | defs.Track.ProofExhibition | defs.Track.Cloud | defs.Track.Parallel:
                             continue
-                    for _, theories in divisions.items():
-                        for theory in theories:
-                            file_sat = smtcomp.generate_benchmarks.path_trivial_benchmark(
-                                outdir, track, theory, defs.Status.Sat
-                            )
-                            cmd = [part.command.binary] + part.command.arguments + [file_sat]
-
-                            out.writelines([f"subprocess.run({cmd!r})"])
+                    for _, logics in divisions.items():
+                        for logic in logics:
+                            for status in [defs.Status.Sat, defs.Status.Unsat]:
+                                write_test(out, track, logic, part, status, trivial_bench.relative_to(outdir), outdir)
+                                write_test(
+                                    out,
+                                    track,
+                                    logic,
+                                    part,
+                                    status,
+                                    trivial_bench.absolute(),
+                                    outdir.absolute(),
+                                )

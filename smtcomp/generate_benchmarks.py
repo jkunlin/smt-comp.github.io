@@ -38,7 +38,7 @@ def generate_trivial_benchmarks(dst: Path) -> None:
             for theory in theories:
                 file = dst.joinpath(str(theory) + suffix)
                 file_sat = path_trivial_benchmark(dst, track, theory, defs.Status.Sat)
-                file_unsat = path_trivial_benchmark(dst, track, theory, defs.Status.Sat)
+                file_unsat = path_trivial_benchmark(dst, track, theory, defs.Status.Unsat)
 
                 file.write_text("\n".join([str(file_sat.relative_to(dst)), str(file_unsat.relative_to(dst))]))
 
