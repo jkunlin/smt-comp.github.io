@@ -508,7 +508,7 @@ def scramble_benchmarks(
 
 
 @app.command()
-def generate_test_script(output: Path, submissions: list[Path] = typer.Argument(None)) -> None:
+def generate_test_script(outdir: Path, submissions: list[Path] = typer.Argument(None)) -> None:
     def read_submission(file: Path) -> defs.Submission:
         try:
             return submission.read(str(file))
@@ -517,12 +517,34 @@ def generate_test_script(output: Path, submissions: list[Path] = typer.Argument(
             print(e)
             exit(1)
 
-    output.mkdir(parents=True, exist_ok=True)
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    smtcomp.generate_benchmarks.generate_trivial_benchmarks(outdir.joinpath("trivial_bench"))
 
     l = list(map(read_submission, submissions))
-    script_output = output.joinpath("test_script.py")
+    script_output = outdir.joinpath("test_script.py")
     with script_output.open("w") as out:
-        out.writelines("""print("Testing provers")\n""")
+        out.writelines(["import subprocess\n",
+                        """print("Testing provers")\n"""])
         for sub in l:
-            out.writelines(f"print({sub.name!r})\n")
-            download_archive_aux(sub, output)
+            out.writelines([f"print({sub.name!r})"])
+            download_archive_aux(sub, outdir)
+            for part in sub.complete_participations():
+                for track, divisions in part.tracks.items():
+                    match track:
+                        case defs.Track.Incremental:
+                            pass
+                        case defs.Track.ModelValidation:
+                            pass
+                        case defs.Track.SingleQuery:
+                            pass
+                        case defs.Track.UnsatCore | defs.Track.ProofExhibition | defs.Track.Cloud | defs.Track.Parallel:
+                            continue
+                    for _, theories in divisions.items():
+                        for theory in theories:
+                            file_sat = smtcomp.generate_benchmarks.path_trivial_benchmark(
+                                outdir, track, theory, defs.Status.Sat
+                            )
+                            cmd = [part.command.binary] + part.command.arguments + [file_sat]
+
+                            out.writelines([f"subprocess.run({cmd!r})"])
